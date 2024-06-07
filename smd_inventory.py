@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import sys
+from typing import Any
 from ansible.plugins.inventory import BaseInventoryPlugin
-from ansible.errors import AnsibleParserError
 import requests
 
 
@@ -18,8 +18,13 @@ DOCUMENTATION = r'''
         choices: ['smd_inventory']
       smd_server:
         description: Base address of the smd server to query for inventory
+        type: string
         required: true
+      access_token:
+        description: Access token for the smd server, if required
+        type: string
 '''
+# TODO: Support multiple smd servers? Would this realistically be useful?
 
 EXAMPLES = r'''
     # query the smd server specified in smd_inventory_config.yml, and run a play
@@ -36,15 +41,26 @@ class InventoryModule(BaseInventoryPlugin):
             return path.endswith('yaml') or path.endswith('yml')
         return False
 
-    def parse(self, inventory, loader, path, cache=True):
+    def parse(self, inventory: Any, loader: Any, path: Any, cache: bool = True) -> Any:
         super().parse(inventory, loader, path, cache)
 
         # Parse 'common format' inventory sources and update any options
-        # declared in DOCUMENTATION
-        config = self._read_config_data(path)
-        # TODO: What's `config`, exactly?
+        # declared in DOCUMENTATION (retrievable via `get_option()`)
+        self._read_config_data(path)
 
-        # TODO: Implement smd querying and data parsing (the "real" work)
+        # Query the smd server to retrieve its node list
+        # TODO: How is this formatted? What data does is actually contain?
+        the_heck_is_this = get_smd(
+                self.get_option('smd_server'),
+                "Inventory/Hardware/Query/all",
+                access_token=self.get_option('access_token'))
+                # TODO: What happens if no access token was set? We want the
+                # result to be falsy (ideally None).
+
+        # Parse the returned smd inventory and make it available to Ansible
+        # TODO: Actually loop over the results from smd
+        self.inventory.add_host('the_node_name')
+        self.inventory.set_variable('the_node_name', 'ansible_host', 'the_node_ip')
 
 
 def get_smd(host: str, endpoint: str, base_path="/hsm/v2/", access_token=None, timeout=10):

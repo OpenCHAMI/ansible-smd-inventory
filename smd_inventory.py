@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import sys
 from ansible.plugins.inventory import BaseInventoryPlugin
 from ansible.errors import AnsibleParserError
+import requests
 
 
 DOCUMENTATION = r'''
@@ -43,3 +45,30 @@ class InventoryModule(BaseInventoryPlugin):
         # TODO: What's `config`, exactly?
 
         # TODO: Implement smd querying and data parsing (the "real" work)
+
+
+def get_smd(host: str, endpoint: str, base_path="/hsm/v2/", access_token=None, timeout=10):
+    """
+    Query an smd endpoint on the specified server.
+
+    Allows overriding the default access token (or lack thereor), base path,
+    and timeout. The base path should have both leading and trailing slashes,
+    while the hostname and endpoint should not.
+    """
+    url = host + base_path + endpoint
+    headers = None
+    if access_token:
+        headers = {'Authorization' : f'Bearer {access_token}'}
+    r = requests.get(url, headers=headers, timeout=timeout)
+    try:
+        data = r.json()
+        return data
+    except requests.exceptions.RequestException:
+        tip = ""
+        if r.status_code == 401:
+            tip = "Please check your access token"
+            ret = 65
+        else:
+            ret = 64
+        print(f"Error: {r.status_code} {r.reason} when querying {url}. {tip}")
+        sys.exit(ret)

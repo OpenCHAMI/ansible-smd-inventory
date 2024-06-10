@@ -67,11 +67,11 @@ def get_smd(host: str, endpoint: str, base_path="/hsm/v2/", access_token=None, t
     """
     Query an smd endpoint on the specified server.
 
-    Allows overriding the default access token (or lack thereor), base path,
+    Allows overriding the default access token (or lack thereof), base path,
     and timeout. The base path should have both leading and trailing slashes,
     while the hostname and endpoint should not.
     """
-    url = host + base_path + endpoint
+    url = "https://" + host + base_path + endpoint
     headers = None
     if access_token:
         headers = {'Authorization' : f'Bearer {access_token}'}

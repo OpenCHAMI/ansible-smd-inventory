@@ -20,6 +20,10 @@ DOCUMENTATION = r'''
         description: Base address of the smd server to query for inventory
         type: string
         required: true
+      filter_by:
+        description: smd filter parameters to apply
+        type: string
+        default: '{"type": "Node", "role": "Compute", "state": "Ready"}'
       access_token:
         description: Access token for the smd server, if required
         type: string
@@ -51,6 +55,7 @@ class InventoryModule(BaseInventoryPlugin):
         # TODO: Load smd groups as Ansible groups?
         result = get_smd(
                 self.get_option('smd_server'), "State/Components",
+                filter_by=self.get_option('filter_by'),
                 access_token=self.get_option('access_token'))
 
         # Make each component from smd available to ansible
@@ -61,7 +66,8 @@ class InventoryModule(BaseInventoryPlugin):
             self.inventory.set_variable(nid, 'smd_component', component)
 
 
-def get_smd(host: str, endpoint: str, base_path="/hsm/v2/", access_token=None):
+def get_smd(host: str, endpoint: str, filter_by: dict,
+        base_path="/hsm/v2/", access_token=None):
     """
     Query an smd endpoint on the specified server.
 
@@ -73,7 +79,7 @@ def get_smd(host: str, endpoint: str, base_path="/hsm/v2/", access_token=None):
     headers = None
     if access_token:
         headers = {'Authorization' : f'Bearer {access_token}'}
-    r = requests.get(url, headers=headers)
+    r = requests.get(url, params=filter_by, headers=headers)
     try:
         data = r.json()
         return data
@@ -100,8 +106,9 @@ if __name__ == "__main__":
         print("More than two arguments passed; ignoring extras...")
 
     # Just list hosts, don't interface with Ansible
-    result = get_smd(sys.argv[1], "State/Components", {"role": "Compute", "state": "Ready"},
-            access_token=access_token)
+    result = get_smd(sys.argv[1], "State/Components",
+                     {"type": "Node", "role": "Compute", "state": "Ready"},
+                     access_token=access_token)
     for component in result['Components']:
         print("{} {} is nid{:03}".format(
             component['Type'], component['ID'], component['NID']))

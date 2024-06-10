@@ -27,6 +27,10 @@ DOCUMENTATION = r'''
       access_token:
         description: Access token for the smd server, if required
         type: string
+      nid_length:
+        description: number of digits in the cluster's node IDs
+        type: integer
+        default: 6
 '''
 
 EXAMPLES = r'''
@@ -60,7 +64,8 @@ class InventoryModule(BaseInventoryPlugin):
 
         # Make each component from smd available to ansible
         for component in result['Components']:
-            self.inventory.add_host(nid := 'nid' + component['NID'].zfill(3))
+            self.inventory.add_host(nid := 'nid' +
+                                    component['NID'].zfill(self.get_option('nid_length')))
             # TODO: What if we have a cluster with more than 999 nodes? How do we know?
             # Load a host variable with the state from smd, in case it's needed later
             self.inventory.set_variable(nid, 'smd_component', component)
@@ -110,5 +115,4 @@ if __name__ == "__main__":
                      {"type": "Node", "role": "Compute", "state": "Ready"},
                      access_token=access_token)
     for component in result['Components']:
-        print("{} {} is nid{:03}".format(
-            component['Type'], component['ID'], component['NID']))
+        print("Found {Type} {ID} with NID {NID}".format(**component))

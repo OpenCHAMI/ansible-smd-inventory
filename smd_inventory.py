@@ -10,7 +10,7 @@ DOCUMENTATION = r'''
     name: smd_inventory
     plugin_type: inventory
     short_description: Populates inventory from an smd server
-    description: Contacts the specified smd server, performs an inventory lookup, and makes relevant hosts available to Ansible
+    description: Contacts the specified smd server, performs a component lookup, and makes relevant components available to Ansible as inventory
     options:
       plugin:
         description: Name of the plugin
@@ -24,7 +24,6 @@ DOCUMENTATION = r'''
         description: Access token for the smd server, if required
         type: string
 '''
-# TODO: Support multiple smd servers? Would this realistically be useful?
 
 EXAMPLES = r'''
     # query the smd server specified in smd_inventory_config.yml, and run a play
@@ -49,11 +48,10 @@ class InventoryModule(BaseInventoryPlugin):
         self._read_config_data(path)
 
         # Query the smd server to retrieve its component list
+        # TODO: Load smd groups as Ansible groups?
         result = get_smd(
                 self.get_option('smd_server'), "State/Components",
                 access_token=self.get_option('access_token'))
-                # TODO: What happens if no access token was set? We want the
-                # result to be falsy (ideally None).
 
         # Make each component from smd available to ansible
         for component in result['Components']:
@@ -63,19 +61,19 @@ class InventoryModule(BaseInventoryPlugin):
             self.inventory.set_variable(nid, 'smd_component', component)
 
 
-def get_smd(host: str, endpoint: str, base_path="/hsm/v2/", access_token=None, timeout=10):
+def get_smd(host: str, endpoint: str, base_path="/hsm/v2/", access_token=None):
     """
     Query an smd endpoint on the specified server.
 
-    Allows overriding the default access token (or lack thereof), base path,
-    and timeout. The base path should have both leading and trailing slashes,
-    while the hostname and endpoint should not.
+    Allows overriding the default access token (or rather, lack thereof) and
+    API base path. The base path should have both leading and trailing slashes,
+    while the hostname and endpoint should have neither.
     """
     url = "https://" + host + base_path + endpoint
     headers = None
     if access_token:
         headers = {'Authorization' : f'Bearer {access_token}'}
-    r = requests.get(url, headers=headers, timeout=timeout)
+    r = requests.get(url, headers=headers)
     try:
         data = r.json()
         return data
@@ -102,7 +100,6 @@ if __name__ == "__main__":
         print("More than two arguments passed; ignoring extras...")
 
     # Just list hosts, don't interface with Ansible
-    # TODO: How exactly should these be filtered?
     result = get_smd(sys.argv[1], "State/Components", {"role": "Compute", "state": "Ready"},
             access_token=access_token)
     for component in result['Components']:

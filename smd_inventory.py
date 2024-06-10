@@ -52,7 +52,7 @@ class InventoryModule(BaseInventoryPlugin):
         # TODO: How is this formatted? What data does is actually contain?
         the_heck_is_this = get_smd(
                 self.get_option('smd_server'),
-                "Inventory/Hardware/Query/all",
+                "State/Components",
                 access_token=self.get_option('access_token'))
                 # TODO: What happens if no access token was set? We want the
                 # result to be falsy (ideally None).

@@ -88,3 +88,15 @@ def get_smd(host: str, endpoint: str, base_path="/hsm/v2/", access_token=None, t
             ret = 64
         print(f"Error: {r.status_code} {r.reason} when querying {url}. {tip}")
         sys.exit(ret)
+
+
+if __name__ == "__main__":
+    # Check that an smd host was specfied
+    if len(sys.argv) < 2:
+        print("For use in standalone mode, specify an smd server to target")
+        sys.exit(1)
+    elif len(sys.argv) > 2:
+        print("Extra arguments passed; ignoring...")
+
+    # Just list hosts, don't interface with Ansible
+    print(get_smd(sys.argv[1], "State/Components"))

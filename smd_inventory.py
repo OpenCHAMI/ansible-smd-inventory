@@ -91,12 +91,20 @@ def get_smd(host: str, endpoint: str, base_path="/hsm/v2/", access_token=None, t
 
 
 if __name__ == "__main__":
-    # Check that an smd host was specfied
+    access_token = None
+    # Check arguments: <smd_server> [access_token]
     if len(sys.argv) < 2:
-        print("For use in standalone mode, specify an smd server to target")
+        print("For use in standalone mode, specify smd server to target and optional access token")
         sys.exit(1)
-    elif len(sys.argv) > 2:
-        print("Extra arguments passed; ignoring...")
+    elif len(sys.argv) == 3:
+        access_token = sys.argv[2]
+    elif len(sys.argv) > 3:
+        print("More than two arguments passed; ignoring extras...")
 
     # Just list hosts, don't interface with Ansible
-    print(get_smd(sys.argv[1], "State/Components"))
+    # TODO: How exactly should these be filtered?
+    result = get_smd(sys.argv[1], "State/Components", {"role": "Compute", "state": "Ready"},
+            access_token=access_token)
+    for component in result['Components']:
+        print("{} {} is nid{:03}".format(
+            component['Type'], component['ID'], component['NID']))

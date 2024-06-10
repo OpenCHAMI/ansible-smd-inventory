@@ -48,19 +48,19 @@ class InventoryModule(BaseInventoryPlugin):
         # declared in DOCUMENTATION (retrievable via `get_option()`)
         self._read_config_data(path)
 
-        # Query the smd server to retrieve its node list
-        # TODO: How is this formatted? What data does is actually contain?
-        the_heck_is_this = get_smd(
-                self.get_option('smd_server'),
-                "State/Components",
+        # Query the smd server to retrieve its component list
+        result = get_smd(
+                self.get_option('smd_server'), "State/Components",
                 access_token=self.get_option('access_token'))
                 # TODO: What happens if no access token was set? We want the
                 # result to be falsy (ideally None).
 
-        # Parse the returned smd inventory and make it available to Ansible
-        # TODO: Actually loop over the results from smd
-        self.inventory.add_host('the_node_name')
-        self.inventory.set_variable('the_node_name', 'ansible_host', 'the_node_ip')
+        # Make each component from smd available to ansible
+        for component in result['Components']:
+            self.inventory.add_host(nid := 'nid' + component['NID'].zfill(3))
+            # TODO: What if we have a cluster with more than 999 nodes? How do we know?
+            # Load a host variable with the state from smd, in case it's needed later
+            self.inventory.set_variable(nid, 'smd_component', component)
 
 
 def get_smd(host: str, endpoint: str, base_path="/hsm/v2/", access_token=None, timeout=10):

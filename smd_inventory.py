@@ -64,17 +64,27 @@ class InventoryModule(BaseInventoryPlugin):
             access_token_envvar = self.get_option('access_token_envvar')
             if access_token_envvar:
                 access_token = getenv(access_token_envvar)
+                if not access_token:
+                    self.display.warning(
+                            f"Expected to find an access token in ${access_token_envvar}, but it was empty/unset. "
+                            "This may cause smd API calls to fail if the endpoint requires authentication")
+                else:
+                    self.display.v(f"Access token loaded from ${access_token_envvar}")
+            else:
+                self.display.v("No access token environment variable specified; skipping...")
 
             # Query the smd server to retrieve its component list
             # TODO: Load smd groups as Ansible groups?
-            result = get_smd(
-                    self.get_option('smd_server'), "State/Components",
-                    filter_by=json_loads(self.get_option('filter_by')),
-                    access_token=access_token)
+            filter_by = json_loads(self.get_option('filter_by'))
+            components = get_smd(self.get_option('smd_server'), "State/Components",
+                                 filter_by=filter_by, access_token=access_token
+                                 )['Components']
+            self.display.v(f"smd query with filter {filter_by} returned {len(components)} components")
 
             # Make each component from smd available to ansible
-            for component in result['Components']:
+            for component in components:
                 nid_name = 'nid' + str(component['NID']).zfill(self.get_option('nid_length'))
+                self.display.vvv(f"Adding component {component['ID']} as {nid_name}...")
                 self.inventory.add_host(nid_name)
                 # Load a host variable with the state from smd, in case it's needed later
                 self.inventory.set_variable(nid_name, 'smd_component', component)
@@ -83,6 +93,12 @@ class InventoryModule(BaseInventoryPlugin):
             # Handle unset config optons
             raise AnsibleParserError(
                     f"Please ensure that all required options in config file \"{path}\" are set",
+                    e) from e
+
+        except Exception as e:
+            self.display.error(repr(e))
+            raise AnsibleParserError(
+                    "An error occurred during inventory loading from smd",
                     e) from e
 
 
@@ -104,12 +120,11 @@ def get_smd(host: str, endpoint: str, filter_by: dict,
         data = r.json()
         return data
     except requests.exceptions.RequestException as e:
-        tip = ""
-        if r.status_code == 401:
-            tip = "Please check your access token"
-        raise AnsibleParserError(
-                f"Error: {r.status_code} {r.reason} when querying {url}. {tip}",
-                e) from e
+        tips = {200: "Please check your API endpoint",
+                401: "Please check your access token"}
+        print(f"Error: {r.status_code} {r.reason} when querying {url}.",
+              tips.get(r.status_code, ""))
+        raise
 
 
 if __name__ == "__main__":

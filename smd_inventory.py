@@ -4,6 +4,7 @@ from typing import Any
 from ansible.plugins.inventory import BaseInventoryPlugin
 from ansible.errors import AnsibleParserError
 from json import loads as json_loads
+from os import getenv
 import requests
 
 
@@ -25,9 +26,10 @@ DOCUMENTATION = r'''
         description: smd filter parameters to apply
         type: string
         default: '{"type": "Node", "role": "Compute", "state": "Ready"}'
-      access_token:
-        description: Access token for the smd server, if required
+      access_token_envvar:
+        description: Environment variable from which to retrieve smd access token, if required
         type: string
+        default: 'ACCESS_TOKEN'
       nid_length:
         description: number of digits in the cluster's node IDs
         type: integer
@@ -57,12 +59,18 @@ class InventoryModule(BaseInventoryPlugin):
         self._read_config_data(path)
 
         try:
+            access_token = None
+            # Retrieve the access token, if configured
+            access_token_envvar = self.get_option('access_token_envvar')
+            if access_token_envvar:
+                access_token = getenv(access_token_envvar)
+
             # Query the smd server to retrieve its component list
             # TODO: Load smd groups as Ansible groups?
             result = get_smd(
                     self.get_option('smd_server'), "State/Components",
                     filter_by=json_loads(self.get_option('filter_by')),
-                    access_token=self.get_option('access_token'))
+                    access_token=access_token)
 
             # Make each component from smd available to ansible
             for component in result['Components']:

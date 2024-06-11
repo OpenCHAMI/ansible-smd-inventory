@@ -3,6 +3,7 @@
 from typing import Any
 from ansible.plugins.inventory import BaseInventoryPlugin
 from ansible.errors import AnsibleParserError
+from json import loads as json_loads
 import requests
 
 
@@ -59,12 +60,12 @@ class InventoryModule(BaseInventoryPlugin):
         # TODO: Load smd groups as Ansible groups?
         result = get_smd(
                 self.get_option('smd_server'), "State/Components",
-                filter_by=self.get_option('filter_by'),
+                filter_by=json_loads(self.get_option('filter_by')),
                 access_token=self.get_option('access_token'))
 
         # Make each component from smd available to ansible
         for component in result['Components']:
-            nid_name = 'nid' + component['NID'].zfill(self.get_option('nid_length'))
+            nid_name = 'nid' + str(component['NID']).zfill(self.get_option('nid_length'))
             self.inventory.add_host(nid_name)
             # Load a host variable with the state from smd, in case it's needed later
             self.inventory.set_variable(nid_name, 'smd_component', component)

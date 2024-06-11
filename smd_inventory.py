@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-import sys
 from typing import Any
 from ansible.plugins.inventory import BaseInventoryPlugin
+from ansible.errors import AnsibleParserError
 import requests
 
 
@@ -66,7 +66,6 @@ class InventoryModule(BaseInventoryPlugin):
         for component in result['Components']:
             nid_name = 'nid' + component['NID'].zfill(self.get_option('nid_length'))
             self.inventory.add_host(nid_name)
-            # TODO: What if we have a cluster with more than 999 nodes? How do we know?
             # Load a host variable with the state from smd, in case it's needed later
             self.inventory.set_variable(nid_name, 'smd_component', component)
 
@@ -88,18 +87,17 @@ def get_smd(host: str, endpoint: str, filter_by: dict,
     try:
         data = r.json()
         return data
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
         tip = ""
         if r.status_code == 401:
             tip = "Please check your access token"
-            ret = 65
-        else:
-            ret = 64
-        print(f"Error: {r.status_code} {r.reason} when querying {url}. {tip}")
-        sys.exit(ret)
+        raise AnsibleParserError(
+                f"Error: {r.status_code} {r.reason} when querying {url}. {tip}",
+                e) from e
 
 
 if __name__ == "__main__":
+    import sys
     access_token = None
     # Check arguments: <smd_server> [access_token]
     if len(sys.argv) < 2:

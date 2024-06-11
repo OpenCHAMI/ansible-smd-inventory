@@ -64,11 +64,11 @@ class InventoryModule(BaseInventoryPlugin):
 
         # Make each component from smd available to ansible
         for component in result['Components']:
-            self.inventory.add_host(nid := 'nid' +
-                                    component['NID'].zfill(self.get_option('nid_length')))
+            nid_name = 'nid' + component['NID'].zfill(self.get_option('nid_length'))
+            self.inventory.add_host(nid_name)
             # TODO: What if we have a cluster with more than 999 nodes? How do we know?
             # Load a host variable with the state from smd, in case it's needed later
-            self.inventory.set_variable(nid, 'smd_component', component)
+            self.inventory.set_variable(nid_name, 'smd_component', component)
 
 
 def get_smd(host: str, endpoint: str, filter_by: dict,

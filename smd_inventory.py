@@ -77,7 +77,7 @@ class InventoryModule(BaseInventoryPlugin):
             # TODO: Load smd groups as Ansible groups?
             filter_by = json_loads(self.get_option('filter_by'))
             components = get_smd(self.get_option('smd_server'), "State/Components",
-                                 filter_by=filter_by, access_token=access_token
+                                 params=filter_by, access_token=access_token
                                  )['Components']
             self.display.v(f"smd query with filter {filter_by} returned {len(components)} components")
 
@@ -102,7 +102,7 @@ class InventoryModule(BaseInventoryPlugin):
                     e) from e
 
 
-def get_smd(host: str, endpoint: str, filter_by: dict,
+def get_smd(host: str, endpoint: str, params: dict|None = None,
         base_path="/hsm/v2/", access_token=None):
     """
     Query an smd endpoint on the specified server.
@@ -115,7 +115,7 @@ def get_smd(host: str, endpoint: str, filter_by: dict,
     headers = None
     if access_token:
         headers = {'Authorization' : f'Bearer {access_token}'}
-    r = requests.get(url, params=filter_by, headers=headers)
+    r = requests.get(url, params=params, headers=headers)
     try:
         data = r.json()
         return data
@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
     # Just list hosts, don't interface with Ansible
     result = get_smd(sys.argv[1], "State/Components",
-                     {"type": "Node", "role": "Compute", "state": "Ready"},
+                     params={"type": "Node", "role": "Compute", "state": "Ready"},
                      access_token=access_token)
     for component in result['Components']:
         print("Found {Type} {ID} with NID {NID}".format(**component))

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from typing import Any
-from ansible.plugins.inventory import BaseInventoryPlugin
+from ansible.plugins.inventory import BaseInventoryPlugin, Cacheable
 from ansible.errors import AnsibleError, AnsibleParserError
 from json import loads as json_loads
 from os import getenv
@@ -34,6 +34,8 @@ DOCUMENTATION = r'''
         description: number of digits in the cluster's node IDs
         type: integer
         default: 6
+    extends_documentation_fragment:
+      - inventory_cache
 '''
 
 EXAMPLES = r'''
@@ -42,7 +44,7 @@ EXAMPLES = r'''
 '''
 
 
-class InventoryModule(BaseInventoryPlugin):
+class InventoryModule(BaseInventoryPlugin, Cacheable):
     NAME = 'smd_inventory'
 
     def __init__(self):
@@ -61,8 +63,10 @@ class InventoryModule(BaseInventoryPlugin):
         super().parse(inventory, loader, path, cache)
 
         # Parse 'common format' inventory sources and update any options
-        # declared in DOCUMENTATION (retrievable via `get_option()`)
+        # declared in DOCUMENTATION (retrievable via `get_option()`) and load
+        # the cache.
         self._read_config_data(path)
+        cache_key = self.get_cache_key(path)
 
         try:
             # Retrieve and store config options
@@ -87,9 +91,22 @@ class InventoryModule(BaseInventoryPlugin):
                     f"Please ensure that all required options in config file \"{path}\" are set",
                     e) from e
 
-        # Retrieve and populate inventory
-        inventory = self.get_inventory()
-        # TODO: Implement caching of retrieved inventory here
+        # Retrieve or load inventory, while interacting with the cache; see
+        # https://docs.ansible.com/ansible/latest/dev_guide/developing_inventory.html#inventory-cache
+        user_cache_setting = self.get_option('cache')
+        attempt_to_read_cache = user_cache_setting and cache
+        cache_needs_update = user_cache_setting and not cache
+        if attempt_to_read_cache:
+            try:
+                inventory = self._cache[cache_key]
+            except KeyError:
+                cache_needs_update = True
+
+        if not attempt_to_read_cache or cache_needs_update:
+            inventory = self.get_inventory()
+
+        if cache_needs_update:
+            self._cache[cache_key] = inventory
         self.populate(**inventory)
 
 

@@ -21,7 +21,7 @@ DOCUMENTATION = r'''
       smd_server:
         description: Base address of the smd server to query for inventory
         type: string
-        required: true
+        default: 'localhost:27779'
       filter_by:
         description: smd filter parameters to apply
         type: string

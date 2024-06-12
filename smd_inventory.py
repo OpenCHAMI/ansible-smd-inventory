@@ -2,7 +2,7 @@
 
 from typing import Any
 from ansible.plugins.inventory import BaseInventoryPlugin
-from ansible.errors import AnsibleParserError
+from ansible.errors import AnsibleError, AnsibleParserError
 from json import loads as json_loads
 from os import getenv
 import requests
@@ -50,6 +50,7 @@ class InventoryModule(BaseInventoryPlugin):
         self.smd_server = None
         self.filter_by = {}
         self.access_token = None
+        self.nid_map = {}
 
     def verify_file(self, path: str):
         # We can try to use an inventory file if it a) exists, and b) is YAML
@@ -96,7 +97,7 @@ class InventoryModule(BaseInventoryPlugin):
 
         # Populate the inventory from smd
         self.populate_inventory_smd()
-        # TODO: Load smd groups as Ansible groups?
+        self.populate_groups_smd()
 
 
     def populate_inventory_smd(self):
@@ -113,8 +114,39 @@ class InventoryModule(BaseInventoryPlugin):
             self.inventory.add_host(nid_name)
             # Load a host variable with the state from smd, in case it's needed later
             self.inventory.set_variable(nid_name, 'smd_component', component)
+            # Add component to NID map, which links smd IDs (xnames) to NID names (hostnames)
+            self.nid_map[component['ID']] = nid_name
 
-        return inventory
+
+    def populate_groups_smd(self):
+        # Expose smd groups or partitions as Ansible groups
+        # TODO: Also support smd partitions?
+        groups = get_smd(self.smd_server, "groups", access_token=self.access_token)
+        self.display.v(f"smd query returned {len(groups)} groups")
+        for group_obj in groups:
+            group = group_obj['label']
+            self.display.vvv(f"Adding group {group}...")
+
+            # Create the group
+            try:
+                group = self.inventory.add_group(group)
+            except AnsibleError as e:
+                raise AnsibleParserError(f"Unable to add group {group}: {repr(e)}") from e
+
+            # Add each member host to the group
+            for host_id in group_obj['members']['ids']:
+                self.display.vvv(f"Processing component {host_id} in group {group}...")
+                # Ensure host is already in inventory (so as not to bypass the filters)
+                if host_id in self.nid_map:
+                    self.inventory.add_host(self.nid_map[host_id], group)
+                else:
+                    self.display.vv(f"Component {host_id} was excluded by filters; "
+                                    "skipping addition to group {group}...")
+
+            # Clean up this group if it didn't end up containing any hosts
+            if not self.inventory.groups[group].get_hosts():
+                self.display.v(f"Ignored empty or completely filtered group {group}")
+                self.inventory.remove_group(group)
 
 
 def get_smd(host: str, endpoint: str, params: dict|None = None,

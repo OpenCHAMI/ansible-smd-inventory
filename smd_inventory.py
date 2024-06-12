@@ -50,7 +50,6 @@ class InventoryModule(BaseInventoryPlugin):
         self.smd_server = None
         self.filter_by = {}
         self.access_token = None
-        self.nid_map = {}
 
     def verify_file(self, path: str):
         # We can try to use an inventory file if it a) exists, and b) is YAML
@@ -69,6 +68,7 @@ class InventoryModule(BaseInventoryPlugin):
             # Retrieve and store config options
             self.smd_server = self.get_option('smd_server')
             self.filter_by = json_loads(self.get_option('filter_by'))
+            self.display.v(f"Parsed smd component filters {self.filter_by}")
             access_token_envvar = self.get_option('access_token_envvar')
             if access_token_envvar:
                 self.access_token = getenv(access_token_envvar)
@@ -87,73 +87,82 @@ class InventoryModule(BaseInventoryPlugin):
                     f"Please ensure that all required options in config file \"{path}\" are set",
                     e) from e
 
-        # Populate the inventory from smd
-        self.populate_inventory_smd()
-        self.populate_groups_smd("partitions")
-        self.populate_groups_smd("groups")
+        # Retrieve and populate inventory
+        inventory = self.get_inventory()
+        # TODO: Implement caching of retrieved inventory here
+        self.populate(**inventory)
 
 
-    def populate_inventory_smd(self):
+    def get_inventory(self) -> dict[str, dict]:
         """
-        Query the smd server to retrieve its component list
+        Query smd to obtain a list of components and their memberships
         """
-        components = get_smd(self.smd_server, "State/Components", params=self.filter_by,
-                             access_token=self.access_token
-                             )['Components']
-        self.display.v(f"smd query with filter {self.filter_by} returned {len(components)} components")
 
-        # Make each component from smd available to ansible
+        # Retrieve the filtered component inventory from smd...
+        response = get_smd(self.smd_server, "State/Components", params=self.filter_by,
+                           access_token=self.access_token)
+        # ...and build a dictionary indexed by "IDs" (xnames)
+        try:
+            components = {comp['ID']: comp for comp in response['Components']}
+        except KeyError:
+            raise AnsibleParserError("smd component response does not match expected format. Check your access token?")
+        self.display.v(f"smd component query returned {len(components)} components")
+
+        # Retrieve the filtered components' membership data from smd
+        memberships = get_smd(self.smd_server, "memberships", params=self.filter_by,
+                              access_token=self.access_token)
+        self.display.v(f"smd membership query returned {len(components)} components")
+        # Merge into the existing component data, and extract partition/group sets
+        partitions, groups = set(), set()
+        try:
+            for comp in memberships:
+                components[comp['id']].update(comp)
+                partitions.add(comp['partitionName'])
+                groups.update(comp['groupLabels'])
+        except KeyError:
+            raise AnsibleParserError("smd membership response does not match expected format. Check your access token?")
+
+        # Done!
+        self.display.v(f"Flattened membership to {len(partitions)} partitions, {len(groups)} groups")
+        return {'components': components, 'partitions': partitions, 'groups': groups}
+
+
+    def populate(self, components: dict[str, dict[str, str]], partitions: set[str], groups: set[str]):
+        """
+        Use an inventory dump from smd to populate the Ansible inventory
+        """
+
+        # Create all relevant groups ahead-of-time
+        try:
+            self.display.vv(f"Adding partitions {partitions}...")
+            for partition in partitions:
+                self.inventory.add_group('prt_' + partition)
+            self.display.vv(f"Adding groups {groups}...")
+            for group in groups:
+                self.inventory.add_group('grp_' + group)
+        except AnsibleError as e:
+            raise AnsibleParserError(f"Unable to add a group: {repr(e)}") from e
+
+        # Make each inventory component from smd available to Ansible
         for component in components:
+            # Reformat NID and partition name (if any); actually add the host
             nid_name = 'nid' + str(component['NID']).zfill(self.get_option('nid_length'))
-            self.display.vvv(f"Adding component {component['ID']} as {nid_name}...")
-            self.inventory.add_host(nid_name)
-            # Load a host variable with the state from smd, in case it's needed later
+            if component['partitionName']:
+                partition_name = 'prt_' + component['partitionName']
+                self.display.vv(f"Adding component {component['ID']} as {nid_name} in {partition_name}...")
+                self.inventory.add_host(nid_name, partition_name)
+            else:
+                self.display.vv(f"Adding component {component['ID']} as {nid_name} without partition...")
+                self.inventory.add_host(nid_name)
+
+            # Add each host to its other groups
+            for group in component['groupLabels']:
+                group_name = 'grp_' + group
+                self.display.vvv(f"Adding component {component['ID']} to {group_name}...")
+                self.inventory.add_host(nid_name, group_name)
+
+            # Load a host variable with the state from smd, for use in Ansible
             self.inventory.set_variable(nid_name, 'smd_component', component)
-            # Add component to NID map, which links smd IDs (xnames) to NID names (hostnames)
-            self.nid_map[component['ID']] = nid_name
-
-
-    def populate_groups_smd(self, kind: str = "groups"):
-        """
-        Expose smd groups or partitions as Ansible groups
-        """
-        # Validate that we're retrieving either groups or partitions from smd
-        # Also, different JSON keys hold the name of the group/partition :(
-        match kind:
-            case "groups":
-                key_with_name = "label"
-            case "partitions":
-                key_with_name = "name"
-            case _:
-                raise ValueError('smd group kind must be either "groups" or "partitions"')
-
-        # Retrieve group/partition list from smd
-        result = get_smd(self.smd_server, kind, access_token=self.access_token)
-        self.display.v(f"smd query returned {len(result)} {kind}")
-        for group_obj in result:
-            group = kind + '_' + group_obj[key_with_name]
-            self.display.vvv(f"Adding group {group}...")
-
-            # Create the group
-            try:
-                group = self.inventory.add_group(group)
-            except AnsibleError as e:
-                raise AnsibleParserError(f"Unable to add group {group}: {repr(e)}") from e
-
-            # Add each member host to the group
-            for host_id in group_obj['members']['ids']:
-                self.display.vvv(f"Processing component {host_id} in group {group}...")
-                # Ensure host is already in inventory (so as not to bypass the filters)
-                if host_id in self.nid_map:
-                    self.inventory.add_host(self.nid_map[host_id], group)
-                else:
-                    self.display.vv(f"Component {host_id} was excluded by filters; "
-                                    "skipping addition to group {group}...")
-
-            # Clean up this group if it didn't end up containing any hosts
-            if not self.inventory.groups[group].get_hosts():
-                self.display.v(f"Ignored empty or completely filtered group {group}")
-                self.inventory.remove_group(group)
 
 
 def get_smd(host: str, endpoint: str, params: dict|None = None,

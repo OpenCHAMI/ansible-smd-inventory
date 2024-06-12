@@ -87,14 +87,6 @@ class InventoryModule(BaseInventoryPlugin):
                     f"Please ensure that all required options in config file \"{path}\" are set",
                     e) from e
 
-        except AnsibleParserError: raise  # Pass through errors that are already of the correct form
-
-        except Exception as e:
-            self.display.error(repr(e))
-            raise AnsibleParserError(
-                    "An error occurred during inventory loading from smd",
-                    e) from e
-
         # Populate the inventory from smd
         self.populate_inventory_smd()
         self.populate_groups_smd("partitions")

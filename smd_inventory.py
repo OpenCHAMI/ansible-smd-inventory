@@ -45,6 +45,12 @@ EXAMPLES = r'''
 class InventoryModule(BaseInventoryPlugin):
     NAME = 'smd_inventory'
 
+    def __init__(self):
+        super().__init__()
+        self.smd_server = None
+        self.filter_by = {}
+        self.access_token = None
+
     def verify_file(self, path: str):
         # We can try to use an inventory file if it a) exists, and b) is YAML
         if super().verify_file(path):
@@ -59,12 +65,13 @@ class InventoryModule(BaseInventoryPlugin):
         self._read_config_data(path)
 
         try:
-            access_token = None
-            # Retrieve the access token, if configured
+            # Retrieve and store config options
+            self.smd_server = self.get_option('smd_server')
+            self.filter_by = json_loads(self.get_option('filter_by'))
             access_token_envvar = self.get_option('access_token_envvar')
             if access_token_envvar:
-                access_token = getenv(access_token_envvar)
-                if not access_token:
+                self.access_token = getenv(access_token_envvar)
+                if not self.access_token:
                     self.display.warning(
                             f"Expected to find an access token in ${access_token_envvar}, but it was empty/unset. "
                             "This may cause smd API calls to fail if the endpoint requires authentication")
@@ -73,33 +80,41 @@ class InventoryModule(BaseInventoryPlugin):
             else:
                 self.display.v("No access token environment variable specified; skipping...")
 
-            # Query the smd server to retrieve its component list
-            # TODO: Load smd groups as Ansible groups?
-            filter_by = json_loads(self.get_option('filter_by'))
-            components = get_smd(self.get_option('smd_server'), "State/Components",
-                                 params=filter_by, access_token=access_token
-                                 )['Components']
-            self.display.v(f"smd query with filter {filter_by} returned {len(components)} components")
-
-            # Make each component from smd available to ansible
-            for component in components:
-                nid_name = 'nid' + str(component['NID']).zfill(self.get_option('nid_length'))
-                self.display.vvv(f"Adding component {component['ID']} as {nid_name}...")
-                self.inventory.add_host(nid_name)
-                # Load a host variable with the state from smd, in case it's needed later
-                self.inventory.set_variable(nid_name, 'smd_component', component)
-
         except KeyError as e:
             # Handle unset config optons
             raise AnsibleParserError(
                     f"Please ensure that all required options in config file \"{path}\" are set",
                     e) from e
 
+        except AnsibleParserError: raise  # Pass through errors that are already of the correct form
+
         except Exception as e:
             self.display.error(repr(e))
             raise AnsibleParserError(
                     "An error occurred during inventory loading from smd",
                     e) from e
+
+        # Populate the inventory from smd
+        self.populate_inventory_smd()
+        # TODO: Load smd groups as Ansible groups?
+
+
+    def populate_inventory_smd(self):
+        # Query the smd server to retrieve its component list
+        components = get_smd(self.smd_server, "State/Components", params=self.filter_by,
+                             access_token=self.access_token
+                             )['Components']
+        self.display.v(f"smd query with filter {self.filter_by} returned {len(components)} components")
+
+        # Make each component from smd available to ansible
+        for component in components:
+            nid_name = 'nid' + str(component['NID']).zfill(self.get_option('nid_length'))
+            self.display.vvv(f"Adding component {component['ID']} as {nid_name}...")
+            self.inventory.add_host(nid_name)
+            # Load a host variable with the state from smd, in case it's needed later
+            self.inventory.set_variable(nid_name, 'smd_component', component)
+
+        return inventory
 
 
 def get_smd(host: str, endpoint: str, params: dict|None = None,

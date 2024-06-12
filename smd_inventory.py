@@ -97,11 +97,14 @@ class InventoryModule(BaseInventoryPlugin):
 
         # Populate the inventory from smd
         self.populate_inventory_smd()
-        self.populate_groups_smd()
+        self.populate_groups_smd("partitions")
+        self.populate_groups_smd("groups")
 
 
     def populate_inventory_smd(self):
-        # Query the smd server to retrieve its component list
+        """
+        Query the smd server to retrieve its component list
+        """
         components = get_smd(self.smd_server, "State/Components", params=self.filter_by,
                              access_token=self.access_token
                              )['Components']
@@ -118,13 +121,25 @@ class InventoryModule(BaseInventoryPlugin):
             self.nid_map[component['ID']] = nid_name
 
 
-    def populate_groups_smd(self):
-        # Expose smd groups or partitions as Ansible groups
-        # TODO: Also support smd partitions?
-        groups = get_smd(self.smd_server, "groups", access_token=self.access_token)
-        self.display.v(f"smd query returned {len(groups)} groups")
-        for group_obj in groups:
-            group = group_obj['label']
+    def populate_groups_smd(self, kind: str = "groups"):
+        """
+        Expose smd groups or partitions as Ansible groups
+        """
+        # Validate that we're retrieving either groups or partitions from smd
+        # Also, different JSON keys hold the name of the group/partition :(
+        match kind:
+            case "groups":
+                key_with_name = "label"
+            case "partitions":
+                key_with_name = "name"
+            case _:
+                raise ValueError('smd group kind must be either "groups" or "partitions"')
+
+        # Retrieve group/partition list from smd
+        result = get_smd(self.smd_server, kind, access_token=self.access_token)
+        self.display.v(f"smd query returned {len(result)} {kind}")
+        for group_obj in result:
+            group = kind + '_' + group_obj[key_with_name]
             self.display.vvv(f"Adding group {group}...")
 
             # Create the group

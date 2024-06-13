@@ -116,8 +116,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         """
 
         # Retrieve the filtered component inventory from smd...
-        response = get_smd(self.smd_server, "State/Components", params=self.filter_by,
-                           access_token=self.access_token)
+        response = self.get_smd(self.smd_server, "State/Components", params=self.filter_by)
         # ...and build a dictionary indexed by "IDs" (xnames)
         try:
             components = {comp['ID']: comp for comp in response['Components']}
@@ -126,8 +125,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         self.display.v(f"smd component query returned {len(components)} components")
 
         # Retrieve the filtered components' membership data from smd
-        memberships = get_smd(self.smd_server, "memberships", params=self.filter_by,
-                              access_token=self.access_token)
+        memberships = self.get_smd(self.smd_server, "memberships", params=self.filter_by)
         self.display.v(f"smd membership query returned {len(components)} components")
         # Merge into the existing component data, and extract partition/group sets
         partitions, groups = set(), set()
@@ -182,46 +180,26 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
             self.inventory.set_variable(nid_name, 'smd_component', component)
 
 
-def get_smd(host: str, endpoint: str, params: dict|None = None,
-        base_path="/hsm/v2/", access_token=None):
-    """
-    Query an smd endpoint on the specified server.
+    def get_smd(self, host: str, endpoint: str, params: dict|None = None,
+                base_path: str = "/hsm/v2/"):
+        """
+        Query an smd endpoint on the specified server.
 
-    Allows overriding the default access token (or rather, lack thereof) and
-    API base path. The base path should have both leading and trailing slashes,
-    while the hostname and endpoint should have neither.
-    """
-    url = "https://" + host + base_path + endpoint
-    headers = None
-    if access_token:
-        headers = {'Authorization' : f'Bearer {access_token}'}
-    r = requests.get(url, params=params, headers=headers)
-    try:
-        data = r.json()
-        return data
-    except requests.exceptions.RequestException as e:
-        tips = {200: "Please check your API endpoint",
-                401: "Please check your access token"}
-        print(f"Error: {r.status_code} {r.reason} when querying {url}.",
-              tips.get(r.status_code, ""))
-        raise
-
-
-if __name__ == "__main__":
-    import sys
-    access_token = None
-    # Check arguments: <smd_server> [access_token]
-    if len(sys.argv) < 2:
-        print("For use in standalone mode, specify smd server to target and optional access token")
-        sys.exit(1)
-    elif len(sys.argv) == 3:
-        access_token = sys.argv[2]
-    elif len(sys.argv) > 3:
-        print("More than two arguments passed; ignoring extras...")
-
-    # Just list hosts, don't interface with Ansible
-    result = get_smd(sys.argv[1], "State/Components",
-                     params={"type": "Node", "role": "Compute", "state": "Ready"},
-                     access_token=access_token)
-    for component in result['Components']:
-        print("Found {Type} {ID} with NID {NID}".format(**component))
+        Allows overriding the default access token (or rather, lack thereof) and
+        API base path. The base path should have both leading and trailing slashes,
+        while the hostname and endpoint should have neither.
+        """
+        url = "https://" + host + base_path + endpoint
+        headers = None
+        if self.access_token:
+            headers = {'Authorization' : f'Bearer {self.access_token}'}
+        r = requests.get(url, params=params, headers=headers)
+        try:
+            data = r.json()
+            return data
+        except requests.exceptions.RequestException as e:
+            tips = {200: "Please check your API endpoint",
+                    401: "Please check your access token"}
+            raise AnsibleParserError(
+                    f"Error: {r.status_code} {r.reason} when querying {url}. {tips.get(r.status_code, '')}",
+                    e) from e

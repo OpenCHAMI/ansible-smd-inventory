@@ -1,39 +1,48 @@
-#!/usr/bin/env python3
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 
-from typing import Any
-from ansible.plugins.inventory import BaseInventoryPlugin, Cacheable
-from ansible.errors import AnsibleError, AnsibleParserError
-from json import loads as json_loads
-from os import getenv
-import requests
-
+# Copyright: Triad National Security, LLC
+# MIT License
 
 DOCUMENTATION = r'''
-    name: smd_inventory
-    plugin_type: inventory
-    short_description: Populates inventory from an smd server
-    description: Contacts the specified smd server, performs a component lookup, and makes relevant components available to Ansible as inventory
+    module: smd_inventory
+    short_description: Populates inventory from an smd server.
+    description: Contacts the specified smd server, performs a component lookup, and makes relevant components available to Ansible as inventory.
+    author: Lucas Ritzdorf (lritzdorf@lanl.gov)
     options:
       plugin:
-        description: Name of the plugin
+        description: Name of this plugin. Causes the inventory file to be parsed by us, rather than a different plugin.
         required: true
         choices: ['smd_inventory']
       smd_server:
-        description: Base address of the smd server to query for inventory
+        description: Base address of the smd server to query for inventory, without a trailing slash.
         type: string
         default: 'localhost:27779'
       filter_by:
-        description: smd filter parameters to apply
+        description: smd filter parameters to apply when querying components.
         type: string
         default: '{"type": "Node", "role": "Compute", "state": "Ready"}'
       access_token_envvar:
-        description: Environment variable from which to retrieve smd access token, if required
+        description: Environment variable containing a valid access token, if required by your smd server.
         type: string
         default: 'ACCESS_TOKEN'
       nid_length:
-        description: number of digits in the cluster's node IDs
+        description: Number of digits in the cluster's node IDs. For example, "nid042" has three digits.
         type: integer
         default: 6
+    notes:
+      - This plugin will query the smd endpoints C(/State/Components) and C(/memberships).
+        If these require an access token, ensure that O(access_token_envvar) is set appropriately.
+      - Providing your own filter parameters (O(filter_by)) will replace the defaults, so you may want to use them as a starting point.
+      - Component data retrieved from smd is stored in the C(smd_component) host variable on a per-host basis.
+        It contains a dictionary, which unions the fields returned by the queried API endpoints (ID, Arch, Flag...).
+    seealso:
+      - name: OpenCHAMI smd Fork
+        description: The OpenCHAMI group's fork of the State Management Database (smd) project.
+        link: https://github.com/OpenCHAMI/smd
+      - name: HPE smd Base Project
+        description: The original HPE version of the State Management Database (smd) project.
+        link: https://github.com/Cray-HPE/hms-smd
     extends_documentation_fragment:
       - inventory_cache
 '''
@@ -41,9 +50,29 @@ DOCUMENTATION = r'''
 # See https://docs.ansible.com/ansible/latest/dev_guide/developing_inventory.html#constructed-features
 
 EXAMPLES = r'''
-    # query the smd server specified in smd_inventory_config.yml, and run a play
-    # ansible -i smd_inventory_config.yml play.yml
+Use with an appropriate inventory configuration file.
+
+To query an smd server as specified in smd_inventory_config.yml, and run a play:
+$ ansible-playbook play.yml -i smd_inventory_config.yml
+
+Default options correspond to the following configuration file:
+---
+plugin: smd_inventory
+smd_server: localhost:27779
+filter_by: "{'type': 'Node', 'role': 'Compute', 'state': 'Ready'}"
+access_token_envvar: ACCESS_TOKEN
+nid_length: 6
 '''
+
+RETURN = r''' # '''
+
+
+from typing import Any
+from ansible.plugins.inventory import BaseInventoryPlugin, Cacheable
+from ansible.errors import AnsibleError, AnsibleParserError
+from json import loads as json_loads
+from os import getenv
+import requests
 
 
 class InventoryModule(BaseInventoryPlugin, Cacheable):
@@ -98,17 +127,24 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         user_cache_setting = self.get_option('cache')
         attempt_to_read_cache = user_cache_setting and cache
         cache_needs_update = user_cache_setting and not cache
+
         if attempt_to_read_cache:
             try:
+                self.display.v("Attempting to read inventory from cache...")
                 inventory = self._cache[cache_key]
             except KeyError:
+                self.display.v("Cache read failed; needs update")
                 cache_needs_update = True
 
         if not attempt_to_read_cache or cache_needs_update:
+            self.display.v("Retrieving inventory from smd...")
             inventory = self.get_inventory()
 
         if cache_needs_update:
+            self.display.v("Caching inventory...")
             self._cache[cache_key] = inventory
+
+        self.display.v("Populating Ansible inventory...")
         self.populate(**inventory)
 
 

@@ -37,6 +37,8 @@ DOCUMENTATION = r'''
     extends_documentation_fragment:
       - inventory_cache
 '''
+# TODO: Support construction? Does this plugin even need to be concerned with that?
+# See https://docs.ansible.com/ansible/latest/dev_guide/developing_inventory.html#constructed-features
 
 EXAMPLES = r'''
     # query the smd server specified in smd_inventory_config.yml, and run a play

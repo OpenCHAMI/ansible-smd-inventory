@@ -176,6 +176,8 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
                     groups.update(comp['groupLabels'])
         except KeyError:
             raise AnsibleParserError("smd membership response does not match expected format. Check your access token?")
+        # Convert components dictionary to list of metadata dicts; keys (IDs/xnames) are no longer needed
+        components = list(components.values())
 
         # Done!
         self.display.v(f"Flattened membership to {len(partitions)} partitions, {len(groups)} groups")

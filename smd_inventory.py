@@ -170,8 +170,10 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         try:
             for comp in memberships:
                 components[comp['id']].update(comp)
-                partitions.add(comp['partitionName'])
-                groups.update(comp['groupLabels'])
+                if comp['partitionName']:
+                    partitions.add(comp['partitionName'])
+                if comp['groupLabels']:
+                    groups.update(comp['groupLabels'])
         except KeyError:
             raise AnsibleParserError("smd membership response does not match expected format. Check your access token?")
 

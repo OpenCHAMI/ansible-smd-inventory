@@ -17,7 +17,7 @@ DOCUMENTATION = r'''
       smd_server:
         description: Base address of the smd server to query for inventory, without a trailing slash.
         type: string
-        default: 'localhost:27779'
+        default: 'http://localhost:27779'
       filter_by:
         description: smd filter parameters to apply when querying components.
         type: string
@@ -58,7 +58,7 @@ $ ansible-playbook play.yml -i smd_inventory_config.yml
 Default options correspond to the following configuration file:
 ---
 plugin: smd_inventory
-smd_server: localhost:27779
+smd_server: http://localhost:27779
 filter_by: "{'type': 'Node', 'role': 'Compute', 'state': 'Ready'}"
 access_token_envvar: ACCESS_TOKEN
 nid_length: 6
@@ -231,7 +231,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         API base path. The base path should have both leading and trailing slashes,
         while the hostname and endpoint should have neither.
         """
-        url = "https://" + host + base_path + endpoint
+        url = host + base_path + endpoint
         headers = None
         if self.access_token:
             headers = {'Authorization' : f'Bearer {self.access_token}'}

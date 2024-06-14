@@ -144,7 +144,7 @@ The following inventory file was used to create the examples above:
 ```yml
 ---
 plugin: smd_inventory
-#smd_server: localhost:27779
+#smd_server: http://localhost:27779
 #filter_by: "{'type': 'Node', 'role': 'Compute', 'state': 'Ready'}"
 #access_token_envvar: ACCESS_TOKEN
 nid_length: 3

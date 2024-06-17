@@ -150,3 +150,11 @@ plugin: smd_inventory
 nid_length: 3
 ```
 Commented lines are default values, and will be auto-populated by Ansible if omitted.
+
+
+## Installation
+
+This plugin can be installed locally by copying the main Python script (`smd_inventory.py`) into one of the following directories:
+- The system-wide inventory plugin path (found via `ansible-config dump | grep INVENTORY_PLUGIN_PATH`)
+- The relevant user's inventory plugin path (also found via `ansible-config dump | grep INVENTORY_PLUGIN_PATH`; usually inside of `~/.ansible/`)
+- An alternate plugin directory, defined by your Ansible configuration (see the [relevant Ansible docs](https://docs.ansible.com/ansible/latest/dev_guide/developing_locally.html#adding-a-non-module-plugin-locally-outside-of-a-collection) for details)

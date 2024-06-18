@@ -14,10 +14,9 @@ DOCUMENTATION = r'''
         description: Name of this plugin. Causes the inventory file to be parsed by us, rather than a different plugin.
         required: true
         choices: ['smd_inventory']
-      smd_server:
-        description: Base address of the smd server to query for inventory, without a trailing slash.
+      hsm_url:
+        description: Base address of the smd server to query for inventory, without a trailing slash. If missing, will attempt to read HSM_URL from the environment.
         type: string
-        default: 'http://localhost:27779'
       filter_by:
         description: smd filter parameters to apply when querying components.
         type: string
@@ -58,7 +57,7 @@ $ ansible-playbook play.yml -i smd_inventory_config.yml
 Default options correspond to the following configuration file:
 ---
 plugin: smd_inventory
-smd_server: http://localhost:27779
+# hsm_url unset; will read HSM_URL from environment
 filter_by: "{'type': 'Node', 'role': 'Compute', 'state': 'Ready'}"
 access_token_envvar: ACCESS_TOKEN
 nid_length: 6
@@ -80,7 +79,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
     def __init__(self):
         super().__init__()
-        self.smd_server = None
+        self.hsm_url = None
         self.filter_by = {}
         self.access_token = None
 
@@ -101,7 +100,14 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
 
         try:
             # Retrieve and store config options
-            self.smd_server = self.get_option('smd_server')
+            if hsm_config := self.get_option('hsm_url'):
+                self.hsm_url = hsm_config
+            elif hsm_env := getenv('HSM_URL'):
+                self.display.v(f"hsm_url not set in config file; loaded HSM_URL={hsm_env} from environment")
+                self.hsm_url = hsm_env
+            else:
+                raise AnsibleParserError(
+                        "Failed to load HSM URL (i.e. smd server) from either config file or environment")
             self.filter_by = json_loads(self.get_option('filter_by'))
             self.display.v(f"Parsed smd component filters {self.filter_by}")
             access_token_envvar = self.get_option('access_token_envvar')
@@ -154,7 +160,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         """
 
         # Retrieve the filtered component inventory from smd...
-        response = self.get_smd(self.smd_server, "State/Components", params=self.filter_by)
+        response = self.get_smd(self.hsm_url, "State/Components", params=self.filter_by)
         # ...and build a dictionary indexed by "IDs" (xnames)
         try:
             components = {comp['ID']: comp for comp in response['Components']}
@@ -163,7 +169,7 @@ class InventoryModule(BaseInventoryPlugin, Cacheable):
         self.display.v(f"smd component query returned {len(components)} components")
 
         # Retrieve the filtered components' membership data from smd
-        memberships = self.get_smd(self.smd_server, "memberships", params=self.filter_by)
+        memberships = self.get_smd(self.hsm_url, "memberships", params=self.filter_by)
         self.display.v(f"smd membership query returned {len(components)} components")
         # Merge into the existing component data, and extract partition/group sets
         partitions, groups = set(), set()
